@@ -1,0 +1,314 @@
+#*******************************************************************************
+# DIY Smart Speaker for Home Assistant
+# smart speaker using an ESP32-S3 Zero, programmed with ESPHome, for seamless integration with Home Assistant.
+# Forgani, Forghanain  
+# More information at: https://forgani.com/electronics-projects/diy-smart-speaker-for-home-assistant/
+# initial 28 Jul. 2025
+# ******************************************************************************
+substitutions:
+  friendly_name: 'smart-speaker'
+  device_name: smart_speaker
+  log_level: "INFO" # NONE, ERROR, WARN, INFO, DEBUG (Default), VERBOSE, VERY_VERBOSE
+   
+  #i2s_din_SD_pin: GPIO05    #SD MIC
+  led_brightness:     50%       # RGB LED brightness for simple on/off
+  min_led_brightness: 25%       # Min LED brghtness for effects
+  max_led_brightness: 70%       # Max LED brghtness for effects
+
+  amp_din_pin:    GPIO02 # GPIO04        # Amp DIN
+  amp_bclk_pin:   GPIO03 # GPIO05        # Amp BCLK SCK
+  amp_lrc_pin:    GPIO04 # GPIO06        # Amp LRC  WS
+
+  rgb_led_pin:    GPIO06 # GPIO21        # RGB LED pin, GPIO21 for onboard LED
+  no_leds:        "2"           # Number of RGB LEDs
+
+esphome:
+  name: ${friendly_name}
+  friendly_name: ${friendly_name}
+  platformio_options:
+    board_build.flash_mode: dio
+  on_boot:
+    - script.execute: control_led_init_state
+    - media_player.volume_set:
+          id: media_player_id
+          volume: 50%
+          
+# ESP32-S3 Zero
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 4MB
+  variant: esp32s3
+  framework:
+    type: esp-idf
+    version: recommended
+
+psram:
+  mode: quad # quad for N8R2 and octal for N16R8
+  speed: 80MHz
+
+# Allow Over-The-Air updates
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  power_save_mode: NONE
+  networks:
+    - ssid: !secret iot_wifi_ssid
+      password: !secret iot_wifi_password
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret encryption
+
+captive_portal:
+
+web_server:
+
+debug:
+  update_interval: 5s
+
+text_sensor:
+  # Expose WiFi information as sensors.
+  - platform: wifi_info
+    ip_address:
+      name: Wi-Fi IP
+      icon: mdi:wifi
+    mac_address:
+      name: Wi-Fi MAC
+      icon: mdi:wifi
+  - platform: version
+    name: "ESPHome Version"
+    icon: mdi:wrench-outline
+    disabled_by_default: true
+  - platform: debug
+    device:
+      name: "Device Info"
+    reset_reason:
+      name: "Reset Reason"
+
+# Sync time with Home Assistant
+time:
+  - platform: homeassistant
+    id: ha_time
+
+logger:                                 # Enable logging
+  level: $log_level
+  baud_rate: 0                          # Stops logging over onboard UART
+
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: "rgb_led"
+    name: "RGB LED"
+    pin: $rgb_led_pin
+    num_leds: $no_leds
+    rgb_order: GRB
+    chipset: ws2812
+    default_transition_length: 0ms
+    effects:
+      - pulse:
+          name: "Fast Pulse"
+          transition_length: 100ms
+          update_interval: 100ms
+          min_brightness: $min_led_brightness
+          max_brightness: $max_led_brightness
+      - addressable_color_wipe:
+          name: "Walk"
+          colors:
+            - red: 22%
+              green: 80%
+              blue: 80%
+              num_leds: $no_leds
+              gradient: true
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: $no_leds
+          add_led_interval: 100ms
+          reverse: false
+      - addressable_color_wipe:
+          name: "TTS"
+          colors:
+            - red: 60%
+              green: 30%
+              blue: 0%
+              num_leds: $no_leds
+              gradient: true
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: $no_leds
+          add_led_interval: 50ms
+          reverse: true
+      - addressable_lambda: 
+          name: "volume"
+          update_interval: 100ms
+          lambda: |-
+            int volLeds = 8 * (id(media_player_id).volume + 0.08);
+            it.all() = Color(200, 0, 0);
+            it.range(0, 8 - volLeds) = Color(100, 100, 100);
+      - addressable_rainbow:
+          name: Rainbow Effect With Custom Values
+          speed: 10
+          width: 50
+      - addressable_lambda:
+         name: "Reading Light"
+         update_interval: 1s
+         lambda: |-
+          it.all()= Color(255, 170, 160);
+          return;
+      - addressable_rainbow:
+          name: "Rainbow II"
+          width: ${no_leds}
+      - addressable_twinkle:
+          name: "Twinkle"
+
+i2s_audio:
+    i2s_lrclk_pin: $amp_lrc_pin  #WS/LRC
+    i2s_bclk_pin: $amp_bclk_pin  #SCK/BCLK
+    # sample_rate: 48000
+
+speaker:
+  - platform: i2s_audio
+    id: speaker_id
+    dac_type: external
+    i2s_dout_pin: $amp_din_pin
+    sample_rate: 48000
+  - platform: mixer
+    id: mixer_speaker_id
+    output_speaker: speaker_id
+    source_speakers:
+      - id: announcement_spk_mixer_input
+        timeout: never
+      - id: media_spk_mixer_input
+        timeout: never
+  - platform: resampler
+    id: media_spk_resampling_input
+    output_speaker: media_spk_mixer_input
+  - platform: resampler
+    id: announcement_spk_resampling_input
+    output_speaker: announcement_spk_mixer_input
+
+media_player:
+  - platform: speaker
+    name: "Media Player"
+    id: media_player_id
+    media_pipeline:
+        speaker: media_spk_resampling_input
+        num_channels: 2
+    announcement_pipeline:
+        speaker: announcement_spk_resampling_input
+        num_channels: 1
+    files:
+      - id: timer_finished_sound
+        file: ./sounds/timer_finished.flac
+      # - id: wake_word_triggered_sound
+      # https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/wake_word_triggered.flac
+      # file: ./sounds/wake_word_triggered.flac
+      # https://github.com/esphome/home-assistant-voice-pe/raw/dev/sounds/timer_finished.flac
+      #- id: alarm_sound
+      #  file: 
+    on_state:
+      - lambda:
+          if (id(volInternal).state != id(media_player_id).volume) {
+            id(rgb_led).turn_on().set_effect("volume").perform();
+          } else {
+            int outState = id(media_player_id).state;
+            if(outState == 2) id(rgb_led).turn_on().set_effect("Walk").perform();
+            if(outState == 4) id(rgb_led).turn_on().set_effect("TTS").perform();
+            if((outState != 0) && (outState != 2) && (outState != 4)) id(rgb_led).turn_off().perform();
+          }
+      - delay: 4s
+      - lambda: 
+          if (id(volInternal).state != id(media_player_id).volume) {
+            id(volInternal).state = id(media_player_id).volume;
+            int outState = id(media_player_id).state;
+            if(outState == 2) id(rgb_led).turn_on().set_effect("Walk").perform();
+            if(outState == 4) id(rgb_led).turn_on().set_effect("TTS").perform();
+            if((outState != 2) && (outState != 4)) id(rgb_led).turn_off().perform();
+          }
+
+number:
+  - platform: template
+    name: internal volume
+    id: volInternal
+    internal: True
+    min_value: 0
+    max_value: 1
+    step: 0.01
+    initial_value: 0.5
+    optimistic: True
+
+button:
+  - platform: restart
+    id: "restart_device"
+    name: "Restart"
+    entity_category: "diagnostic"
+  - platform: safe_mode
+    id: "restart_device_safe_mode"
+    name: "Restart (Safe Mode)"
+    entity_category: "diagnostic"
+    disabled_by_default: true           # Shows entity in HA, but disabled by default
+  - platform: factory_reset
+    name: Restart with Factory Default Settings
+    disabled_by_default: true
+    entity_category: diagnostic
+  - platform: shutdown
+    name: "Shutdown"
+    disabled_by_default: true
+    entity_category: diagnostic
+    
+switch:
+  - platform: template
+    name: "media stream"
+    id: timer_ringing
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    on_turn_off:
+        # Stop playing the alarm
+        - media_player.stop:
+            announcement: true
+        - mixer_speaker.apply_ducking:  # Stop ducking the media stream over 2 seconds
+            id: media_spk_mixer_input
+            decibel_reduction: 0
+            duration: 2.0s
+
+script:
+  # Turn the LED in green with a slow pulse 🟢
+  - id: control_led_init_state
+    then:
+      - light.turn_on:
+          id: rgb_led
+          blue: 0%
+          red: 0%
+          green: 50%
+          effect: "Fast Pulse"
+
+sensor:
+  - platform: wifi_signal # reports the WiFi signal strength in dB.
+    name: "WiFi Signal dB"              
+    id: wifi_signal_db
+    update_interval: 60s                # report every minute
+    entity_category: "diagnostic"
+    device_class: "signal_strength"
+    disabled_by_default: true           # shows entity in HA, but disabled by default
+    internal: true
+  - platform: copy                      # reports the WiFi signal strength %
+    source_id: wifi_signal_db
+    name: "WiFi Signal"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    device_class: "signal_strength"
+    disabled_by_default: true           # Shows entity in HA, but disabled by default
+  - platform: uptime
+    id: uptime_seconds
+    # update_interval: 10s
+    internal: true                    # Uncomment to leave internal and not send to HA
+    name: "Uptime seconds"
+    entity_category: "diagnostic"
+    disabled_by_default: true           # Shows entity in HA, but disabled by default
+
