@@ -1,0 +1,63 @@
+type: vertical-stack
+cards:
+  - entity: media_player.smart_speaker_media_player
+    type: custom:mini-media-player
+    name: Smart Speacker
+    info: short
+    source: icon
+    artwork: cover-fit
+    volume_step: "5"
+    hide:
+      power: false
+    shortcuts:
+      columns: 4
+      buttons:
+        - name: Farda
+          image: >-
+            http://www.radiofarda.com//Content/responsive/RFE/img/webApp/favicon.ico
+          type: playlist
+          id: media-source://radio_browser/96494925-0601-11e8-ae97-52543be04c81
+          media_content_type: audio/mpeg
+        - name: Khatereh
+          image: null
+          type: playlist
+          id: media-source://radio_browser/0bf02f35-7bd9-4ca0-839f-662987e4764d
+        - name: iranint
+          image: https://iranintl.com/favicon.ico
+          type: playlist
+          id: media-source://radio_browser/5c6c092b-2b8b-4ac1-a8d0-090f87037fd9
+      label: Senderwahl
+      list:
+        - name: DLF
+          type: custom
+          id: media-source://radio_browser/1c3e8be2-5b14-4933-bad3-87cbc227cba4
+        - name: 1Live
+          type: custom
+          id: media-source://radio_browser/9606f727-0601-11e8-ae97-52543be04c81
+        - name: Iran On Air
+          type: custom
+          id: media-source://radio_browser/964807c7-0601-11e8-ae97-52543be04c81
+    group: false
+    volume_stateless: false
+    sound_mode: full
+  - type: custom:mini-media-player
+    entity: media_player.smart_speaker_media_player
+    icon: mdi:seat-legroom-extra
+    info: short
+    source: full
+    artwork: material
+    volume_step: "5"
+    tts:
+      platform: google
+    group: true
+    icon_state: true
+    speaker_group:
+      plattform: media_player
+      show_group_count: false
+      entities:
+        - entity_id: media_player.fire_tablet
+        - entity_id: media_player.smart_speaker_media_player
+        - entity_id: media_player.kang_s_fire
+        - entity_id: media_player.this_device
+      toggle_power: true
+      sound_mode: icon
